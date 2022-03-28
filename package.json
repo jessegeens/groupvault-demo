@@ -1,0 +1,25 @@
+{
+  "name": "macaroons-test",
+  "version": "1.0.0",
+  "description": "Test for macaroons authentication",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "solid",
+    "macaroons"
+  ],
+  "author": "Jesse Geens",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^0.26.1",
+    "crypto-random-string": "^4.0.0",
+    "express": "^4.17.3",
+    "macaroons.js": "^0.3.9",
+    "uuid": "^8.3.2"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.15"
+  }
+}
