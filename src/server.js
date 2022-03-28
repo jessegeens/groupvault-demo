@@ -29,19 +29,19 @@ app.get('/', function(req, res) {
 });
 
 app.get('/idp/new_macaroon/:user', function(req, res) {
-    let identifier = "my_macaroon";
-    let location = "localhost";
+    let identifier = req.params.user;
+    let location = "http://localhost:" + port;
     let myMacaroon = MacaroonsBuilder.create(location, mySecret, identifier);
     
     myMacaroon = MacaroonsBuilder.modify(myMacaroon)
-    .add_first_party_caveat("user = " + req.params.user)
+    //.add_first_party_caveat("user = " + req.params.user)
     .add_first_party_caveat("time < " + (Date.now() + 1000 * 5))
     .getMacaroon();
 
     res.send(myMacaroon.serialize())
 })
 
-app.get('/:user/:file', function(req, res) {
+/*app.get('/:user/:file', function(req, res) {
     let auth = req.headers['macaroon'];
     if(!auth) res.status(403).send("Forbidden");
     let myMacaroon = MacaroonsBuilder.deserialize(auth);
@@ -58,7 +58,7 @@ app.get('/:user/:file', function(req, res) {
         console.log("[WARN] Invalid token passed!")
         res.status(403).send("Forbidden")
     }
-});
+});*/
 
 app.listen(port, function() {
   console.log(`[INFO] Test server listening on port ${port}!`)
