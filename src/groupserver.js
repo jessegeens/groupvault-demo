@@ -18,12 +18,18 @@ app.use(bodyParser.urlencoded({ extended: false }))
 app.use(bodyParser.json())
 
 
+// In production app, would include WebIDs, based on which the public key
+// can be fetched from the oidcIssuer element in the profile document
+// Based on this, the discharge macaroons would also be constructed
+let groupMembers = {
+    'group1': ["jesse", "john"] 
+}
+
 let generatedIdentifiers = [];
 let parsedIdentifiers = [];
 
 // Counter replay attacks by keeping used identifiers
 function IdentifierVerifier(caveat) {
-    console.log("Called IdentifierVerifier for caveat " + caveat)
     if (!caveat.includes("identifier = ")) return false;
     let identifier = caveat.replace("identifier = ", "");
     if (parsedIdentifiers.includes(identifier)) {
@@ -58,6 +64,16 @@ function CorrectGroupVerifier(caveat, claimedGroup) {
     return false;
 }
 
+// Verify that the user the macaroon is issued to
+// is part of the group
+function UserInGroupVerifier(caveat, group) {
+    if (!caveat.includes("user = ")) return false;
+    let user = caveat.replace("user = ", "");
+    if(groupMembers[group].includes(user)) return true;
+    console.log(`[WARN] Macaroon valid for user ${user}, who is not part of ${group}`);
+    return false;
+}
+
 // Create new macaroons
 app.get('/idp/new_macaroon/:group/:user', async function(req, res) {
     let caveatidentifier = "discharge id = " + uuid.v4();
@@ -66,7 +82,17 @@ app.get('/idp/new_macaroon/:group/:user', async function(req, res) {
 
     let caveatKey = uuid.v4();
 
+    // Before issuing a macaroon for this group, make sure
+    // user actually belongs to this group
+    if(!groupMembers[req.params.group].includes(req.params.user)) {
+        console.log("[WARN] User not belonging to group tried requesting macaroon");
+        res.status(403).send("Forbidden: not a mamber of the group");
+        return;
+    }
+
     // Third party caveat
+
+    // In production app, determine this based on webid document
     let foreignAuthLocation = "http://localhost:8002";
 
     let publicKey = (await axios.get(foreignAuthLocation + "/public-key")).data;
@@ -104,14 +130,15 @@ app.get('/:group/:file', function(req, res) {
     let discharge = MacaroonsBuilder.deserialize(dischargeEncoded);
     console.log(`[INFO] Received request for ${req.params.group}/${req.params.file}`); 
 
-    console.log(`Macaroon is ${myMacaroon.inspect()}`);
+    //console.log(`Macaroon is ${myMacaroon.inspect()}`);
 
     // Verify all caveats of root macaroon
     // -> Includes verifying discharge macaroon
     let verifier = new MacaroonsVerifier(myMacaroon);
-    verifier.satisfyGeneral(IdentifierVerifier);
     verifier.satisfyGeneral((caveat) => CorrectGroupVerifier(caveat, req.params.group));
+    verifier.satisfyGeneral((caveat) => UserInGroupVerifier(caveat, req.params.group));
     verifier.satisfyGeneral(TimestampVerifier);
+    verifier.satisfyGeneral(IdentifierVerifier);
     verifier.satisfyExact(`method = ${req.method}`);
     verifier.satisfyExact(`file = ${req.params.file}`);
     verifier.satisfy3rdParty(discharge);
@@ -119,12 +146,12 @@ app.get('/:group/:file', function(req, res) {
     if(verifier.isValid(mySecret)){
         res.send("Success! Very private resource");
     } else {
-        console.log("[WARN] Invalid token passed!")
-        res.status(403).send("Forbidden")
+        console.log("[WARN] Invalid token passed!");
+        res.status(403).send("Forbidden");
     }
 
 });
 
 app.listen(port, function() {
-  console.log(`[INFO] Group server listening on port ${port}!`)
+  console.log(`[INFO] Group server listening on port ${port}!`);
 });

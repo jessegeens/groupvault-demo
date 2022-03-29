@@ -55,6 +55,7 @@ app.post('/idp/authorize', function(req, res) {
     `http://localhost:${port}`,
     decryptedCaveatKey, caveatId)
     .add_first_party_caveat("time < " + (Date.now() + 1000 * 5))
+    .add_first_party_caveat("user = " + username)
     .getMacaroon();
 
   let preparedDischargeMacaroon = new MacaroonsBuilder.modify(macaroon)

@@ -1,6 +1,5 @@
 const axios = require('axios')
 const MacaroonsBuilder = require('macaroons.js').MacaroonsBuilder;
-const uuid = require("uuid");
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const serverport = 8002;
@@ -43,37 +42,41 @@ async function requestResource() {
     let macaroonResult = await retrieveMacaroon();  
     let myBuilderMacaroon = macaroonResult['macaroon'];
     let discharge = macaroonResult['discharge'];
-    let myMacaroon = MacaroonsBuilder.modify(
-        MacaroonsBuilder.deserialize(myBuilderMacaroon))
-        .add_first_party_caveat("")
-        //.add_first_party_caveat("method = GET")
-        //.add_first_party_caveat("identifier = " + uuid.v4())
-        .getMacaroon();
-    console.log("Using macaroon " + myMacaroon.inspect());
-    let result = await axios
-        .get(`http://localhost:${groupport}/${group}/resource`, {
-            headers: {
-                'macaroon': myMacaroon.serialize(),
-                'discharge': discharge
-            }
-        })
-    console.log(result.data);
+    
+    try {
+        let myMacaroon = MacaroonsBuilder.modify(
+            MacaroonsBuilder.deserialize(myBuilderMacaroon))
+            //.add_first_party_caveat("method = GET")
+            //.add_first_party_caveat("identifier = " + uuid.v4())
+            .getMacaroon();
+        let result = await axios
+            .get(`http://localhost:${groupport}/${group}/resource`, {
+                headers: {
+                    'macaroon': myMacaroon.serialize(),
+                    'discharge': discharge
+                }
+            })
+        console.log(result.data);
+    } catch (ex) {
+        console.log("Error fetching resource: " + ex);
+    } 
 
     //await sleep(5000);
 
     try {
-        let myMacaroon = MacaroonsBuilder.modify(myBuilderMacaroon)
-        //.add_first_party_caveat("method = GET")
-        //.add_first_party_caveat("identifier = " + uuid.v4())
-        .getMacaroon();
+        let myMacaroon = MacaroonsBuilder.modify(
+            MacaroonsBuilder.deserialize(myBuilderMacaroon))
+            //.add_first_party_caveat("method = GET")
+            //.add_first_party_caveat("identifier = " + uuid.v4())
+            .getMacaroon();
 
         let result = await axios
-        .get(`http://localhost:${groupport}/group1/resource`, {
-            headers: {
-                'macaroon': myMacaroon.serialize(),
-                'discharge': discharge
-            }
-        })
+            .get(`http://localhost:${groupport}/group1/resource`, {
+                headers: {
+                    'macaroon': myMacaroon.serialize(),
+                    'discharge': discharge
+                }
+            })
         console.log("Second fetch: " + result.data);
     } catch (ex) {
         console.log("Failed fetching twice with same macaroon");
