@@ -1,4 +1,4 @@
-import { TimestampVerifier } from "./util";
+//import { TimestampVerifier } from "./util.mjs";
 
 const mySecret = "GroupServerSecretString";
 const MacaroonsBuilder = require('macaroons.js').MacaroonsBuilder;
@@ -17,6 +17,13 @@ function IdentifierVerifier(caveat, parsedIdentifiers) {
     parsedIdentifiers.push(identifier);
     return true;
 }
+
+function TimestampVerifier(caveat) {
+    if (!caveat.includes("time <")) return false;
+    let timestamp = parseInt(caveat.replace("time < ", ""));
+    if (timestamp > Date.now()) return true;
+    return false;
+  }
 
 // TODO implement
 function UserInGroupVerifier(caveat, parsedIdentifiers) {
@@ -56,7 +63,7 @@ app.get('/:user/:file', function(req, res) {
 
     // Verify third party Macaroon
     let d = new MacaroonsBuilder("http://localhost:8002", "thirdpartysecret", identifier)
-    .add_first_party_caveat("time < 2015-01-01T00:00")
+    .add_first_party_caveat("time < " + (Date.now() + 1000 * 60 * 5))
     .getMacaroon();
 
     if(verifier.isValid(mySecret)){
@@ -68,5 +75,5 @@ app.get('/:user/:file', function(req, res) {
 });
 
 app.listen(port, function() {
-  console.log(`[INFO] Test server listening on port ${port}!`)
+  console.log(`[INFO] Group server listening on port ${port}!`)
 });

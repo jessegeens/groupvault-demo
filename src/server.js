@@ -61,5 +61,5 @@ app.get('/idp/new_macaroon/:user', function(req, res) {
 });*/
 
 app.listen(port, function() {
-  console.log(`[INFO] Test server listening on port ${port}!`)
+  console.log(`[INFO] Group server listening on port ${port}!`)
 });
