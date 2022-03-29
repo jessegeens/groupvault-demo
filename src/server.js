@@ -1,37 +1,71 @@
 const mySecret = "VerySecretString";
 const MacaroonsBuilder = require('macaroons.js').MacaroonsBuilder;
 const MacaroonsVerifier = require('macaroons.js').MacaroonsVerifier;
+var bodyParser = require('body-parser')
 const port = 8002;
+const NodeRSA = require('node-rsa');
+
+const key = new NodeRSA().generateKeyPair();
+
+const publicKey = key.exportKey('pkcs8-public-pem');
+const privateKey = key.exportKey('pkcs1-pem');
 
 const express = require('express');
 const app = express();
 
-let parsedIdentifiers = [];
 
+// parse application/x-www-form-urlencoded
+app.use(bodyParser.urlencoded({ extended: false }))
 
-function TimestampVerifier(caveat) {
-  if (!caveat.includes("time <")) return false;
-  let timestamp = parseInt(caveat.replace("time < ", ""));
-  if (timestamp > Date.now()) return true;
-  return false;
-}
+// parse application/json
+app.use(bodyParser.json())
 
-function IdentifierVerifier(caveat) {
-  if (!caveat.includes("identifier = ")) return false;
-  let identifier = caveat.replace("identifier = ", "");
-  if (parsedIdentifiers.includes(identifier)) return false;
-  parsedIdentifiers.push(identifier);
-  return true;
-}
-
-app.get('/', function(req, res) {
-  res.send('Hello World!')
+app.get('/public-key', function(_, res) {
+  res.status(200).send(publicKey);
 });
 
-app.get('/idp/new_macaroon/:user', function(req, res) {
+app.post('/idp/authorize', function(req, res) {
+  let request = req.body;
+  //console.log("Request body: " + JSON.stringify(req.body))
+  let username = request['username'];
+  let password = request['password'];
+  let caveatKey = request['caveat'];
+  let macaroonData = request['macaroon'];
+
+  //console.log("CaveatKey Base64 is " + caveatKey);
+
+  //let decryptedCaveatKey = caveatKey;
+  let decryptedCaveatKey = key.decrypt(caveatKey); //PRIVATE_KEY.decrypt(Buffer.from(caveatKey, 'utf8'));
+  console.log("Decrypted caveat key is " + decryptedCaveatKey);
+  let macaroon = MacaroonsBuilder.deserialize(macaroonData);
+
+  if(!(username == "jesse" && password == "myPassword")){
+    res.status(403).send("Forbidden: invalid username or password");
+  }
+
+  let dischargeMacaroon = new MacaroonsBuilder(
+    `http://localhost:${port}`,
+    decryptedCaveatKey, 
+    "caveat key id"
+  )
+  //.add_first_party_caveat("time < " + (Date.now() + 1000 * 5))
+  .getMacaroon();
+
+  let preparedDischargeMacaroon = new MacaroonsBuilder.modify(macaroon)
+    .prepare_for_request(dischargeMacaroon)
+    .getMacaroon();
+
+  console.log("[INFO] Sending discharge macaroon");
+  res.status(200).send({
+    macaroon: macaroon.serialize(),
+    discharge: preparedDischargeMacaroon.serialize()
+  });
+});
+
+/*app.get('/idp/new_macaroon/:user', function(req, res) {
     let identifier = req.params.user;
     let location = "http://localhost:" + port;
-    let myMacaroon = MacaroonsBuilder.create(location, mySecret, identifier);
+    let myMacaroon = MacaroonsBuilder.create(location, "k_a", identifier);
     
     myMacaroon = MacaroonsBuilder.modify(myMacaroon)
     //.add_first_party_caveat("user = " + req.params.user)
@@ -39,27 +73,8 @@ app.get('/idp/new_macaroon/:user', function(req, res) {
     .getMacaroon();
 
     res.send(myMacaroon.serialize())
-})
-
-/*app.get('/:user/:file', function(req, res) {
-    let auth = req.headers['macaroon'];
-    if(!auth) res.status(403).send("Forbidden");
-    let myMacaroon = MacaroonsBuilder.deserialize(auth);
-    console.log(myMacaroon.inspect())
-    let verifier = new MacaroonsVerifier(myMacaroon);
-    verifier.satisfyExact(`file = ${req.params.file}`);
-    verifier.satisfyExact(`user = ${req.params.user}`);
-    verifier.satisfyExact(`method = ${req.method}`);
-    verifier.satisfyGeneral(TimestampVerifier)
-    verifier.satisfyGeneral(IdentifierVerifier);
-    if(verifier.isValid(mySecret)){
-        res.send("Success! Very private resource");
-    } else {
-        console.log("[WARN] Invalid token passed!")
-        res.status(403).send("Forbidden")
-    }
-});*/
+})*/
 
 app.listen(port, function() {
-  console.log(`[INFO] Group server listening on port ${port}!`)
+  console.log(`[INFO] Third party auth server listening on port ${port}!`)
 });

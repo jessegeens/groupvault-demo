@@ -5,41 +5,55 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const serverport = 8002;
 const groupport = 8003;
 
-async function retrieveMacaroon() {
-    console.log("Fetching root macaroon from group server");
+const user = "jesse";
+const group = "group1";
 
-    let res = await axios.get(`http://localhost:${groupport}/idp/new_macaroon/group/jesse`)
+async function retrieveMacaroon() {
+
+    // Fetch root macaroon from group server
+    console.log("Fetching root macaroon from group server");
+    let res = await axios.get(`http://localhost:${groupport}/idp/new_macaroon/${group}/${user}`)
     // First macaroon, needs discharge as well
-    let myMacaroonData = res.data;
-    let myMacaroon = MacaroonsBuilder.deserialize(myMacaroonData);
+    let caveatKey = res.data['caveatKey'];
+    let myMacaroon = MacaroonsBuilder.deserialize(res.data['macaroon']);
 
     console.log("Fetched macaroon:" + myMacaroon.inspect());
 
-
+    // Fetch discharge macaroon from server.js
     console.log("Fetching discharge macaroon");
-    res = await axios.get(`http://localhost:${serverport}/idp/new_macaroon/jesse`)
-    let dischargeMacaroonData = res.data;
-    let dischargeMacaroon = MacaroonsBuilder.deserialize(dischargeMacaroonData);
+    res = await axios.post(`http://localhost:${serverport}/idp/authorize`, {
+        username: user,
+        password: "myPassword",
+        caveat: caveatKey,
+        macaroon: myMacaroon.serialize()
+    }, {
+        "Content-Type" : "application/json"
+    })
+    //let dischargeMacaroonData = JSON.parse(res.data);
+    let dischargeMacaroon = res.data['discharge'];
+    console.log(`Fetched discharge: ${JSON.stringify(dischargeMacaroon)}`);
 
-    console.log("Fetched discharge macaroon: " + dischargeMacaroon.inspect());
-
-    let macaroon = MacaroonsBuilder.modify(myMacaroon)
-        .prepare_for_request(dischargeMacaroon)
-        .getMacaroon();
-
-    return macaroon;
+    return {
+        macaroon: myMacaroon.serialize(),
+        discharge: dischargeMacaroon
+    };
 }
 
 async function requestResource() {
-    let myBuilderMacaroon = await retrieveMacaroon();  
-    let myMacaroon = MacaroonsBuilder.modify(myBuilderMacaroon)
-        .add_first_party_caveat("method = GET")
-        .add_first_party_caveat("identifier = " + uuid.v4())
+    let macaroonResult = await retrieveMacaroon();  
+    let myBuilderMacaroon = macaroonResult['macaroon'];
+    let discharge = macaroonResult['discharge'];
+    //console.log("Fetched " + JSON.stringify(macaroonResult))
+    //console.log(`Macaroon is ${myBuilderMacaroon}`);
+    let myMacaroon = MacaroonsBuilder.modify(MacaroonsBuilder.deserialize(myBuilderMacaroon))
+        //.add_first_party_caveat("method = GET")
+        //.add_first_party_caveat("identifier = " + uuid.v4())
         .getMacaroon();
     let result = await axios
-        .get(`http://localhost:${groupport}/jesse/resource`, {
+        .get(`http://localhost:${groupport}/group1/resource`, {
             headers: {
-                'macaroon': myMacaroon.serialize()
+                'macaroon': myMacaroon.serialize(),
+                'discharge': discharge
             }
         })
     console.log(result.data);
