@@ -1,16 +1,15 @@
-//import { TimestampVerifier } from "./util.mjs";
-
-const mySecret = "GroupServerSecretString";
 const MacaroonsBuilder = require('macaroons.js').MacaroonsBuilder;
 const MacaroonsVerifier = require('macaroons.js').MacaroonsVerifier;
 const uuid = require("uuid");
 const axios = require("axios");
 const NodeRSA = require('node-rsa');
 const bodyParser = require('body-parser')
-const port = 8003;
-
 const express = require('express');
+
 const app = express();
+
+const mySecret = "GroupServerSecretString";
+const port = 8003;
 
 // parse application/x-www-form-urlencoded
 app.use(bodyParser.urlencoded({ extended: false }))
@@ -21,11 +20,10 @@ app.use(bodyParser.json())
 
 let generatedIdentifiers = [];
 let parsedIdentifiers = [];
-let groupToUsers = {
-    'group1': ['jesse', 'roland']
-}
 
+// Counter replay attacks by keeping used identifiers
 function IdentifierVerifier(caveat) {
+    console.log("Called IdentifierVerifier for caveat " + caveat)
     if (!caveat.includes("identifier = ")) return false;
     let identifier = caveat.replace("identifier = ", "");
     if (parsedIdentifiers.includes(identifier)) {
@@ -38,6 +36,7 @@ function IdentifierVerifier(caveat) {
     return true;
 }
 
+// Verify macaroon hasn't expired
 function TimestampVerifier(caveat) {
     if (!caveat.includes("time <")) return false;
     let timestamp = parseInt(caveat.replace("time < ", ""));
@@ -47,7 +46,7 @@ function TimestampVerifier(caveat) {
     }
     console.log("[WARN] Macaroon has expired");
     return false;
-  }
+}
 
 // Verify that the macaroon has access to the group
 // to which the file belongs
@@ -59,13 +58,13 @@ function CorrectGroupVerifier(caveat, claimedGroup) {
     return false;
 }
 
-// Serve macaroons
-// In a real-world application, credentials would be checked here
+// Create new macaroons
 app.get('/idp/new_macaroon/:group/:user', async function(req, res) {
-    let identifier = "caveat key id"; //uuid.v4();
+    let caveatidentifier = "discharge id = " + uuid.v4();
+    let identifier = uuid.v4();
     generatedIdentifiers.push(identifier);
 
-    let caveatKey = "secret caveat key";//uuid.v4();
+    let caveatKey = uuid.v4();
 
     // Third party caveat
     let foreignAuthLocation = "http://localhost:8002";
@@ -73,21 +72,20 @@ app.get('/idp/new_macaroon/:group/:user', async function(req, res) {
     let publicKey = (await axios.get(foreignAuthLocation + "/public-key")).data;
 
     let location = "http://localhost:" + port;
-    let myMacaroon = MacaroonsBuilder.create(location, mySecret, "my_identifier");
+    let myMacaroon = MacaroonsBuilder.create(location, mySecret, identifier);
     
     myMacaroon = MacaroonsBuilder.modify(myMacaroon)
     // Valid only for this group
-    //.add_first_party_caveat("group = " + req.params.group)
+    .add_first_party_caveat("group = " + req.params.group)
     // Valid for five minutes
     .add_first_party_caveat("time < " + (Date.now() + 1000 * 60 * 5))
     // User at third party must be logged in
-    .add_third_party_caveat(foreignAuthLocation, caveatKey, identifier)
+    .add_third_party_caveat(foreignAuthLocation, caveatKey, caveatidentifier)
     .getMacaroon();
 
-    //let encryptedCaveatKey = caveatKey;
-    let encryptedCaveatKey = new NodeRSA(publicKey).encrypt(caveatKey).toString('utf8');
-
-    //console.log(`Encrypted caveat key: ${encryptedCaveatKey.toString('base64')}`);
+    let rsa = new NodeRSA();
+    rsa.importKey(publicKey);
+    let encryptedCaveatKey = rsa.encrypt(caveatKey, 'base64');
 
     res.send(JSON.stringify({
         macaroon: myMacaroon.serialize(),
@@ -98,38 +96,26 @@ app.get('/idp/new_macaroon/:group/:user', async function(req, res) {
 app.get('/:group/:file', function(req, res) {
     // Check if there is an auth token attached to the request
     let auth = req.headers['macaroon'];
-    if(!auth) res.status(403).send("Forbidden");
+    let dischargeEncoded = req.headers['discharge'];
+    if(!auth || !dischargeEncoded) res.status(403).send("Forbidden");
+
+    // Deserialize received macaroons
     let myMacaroon = MacaroonsBuilder.deserialize(auth);
+    let discharge = MacaroonsBuilder.deserialize(dischargeEncoded);
+    console.log(`[INFO] Received request for ${req.params.group}/${req.params.file}`); 
 
-    console.log(`Received request for ${req.params.group}/${req.params.file} with macaroon ${myMacaroon.inspect()}`);
+    console.log(`Macaroon is ${myMacaroon.inspect()}`);
 
-
-    let discharge = MacaroonsBuilder.deserialize(req.headers['discharge']);
-
-
+    // Verify all caveats of root macaroon
+    // -> Includes verifying discharge macaroon
     let verifier = new MacaroonsVerifier(myMacaroon);
+    verifier.satisfyGeneral(IdentifierVerifier);
     verifier.satisfyGeneral((caveat) => CorrectGroupVerifier(caveat, req.params.group));
     verifier.satisfyGeneral(TimestampVerifier);
     verifier.satisfyExact(`method = ${req.method}`);
-    verifier.satisfyGeneral(IdentifierVerifier);
-
+    verifier.satisfyExact(`file = ${req.params.file}`);
     verifier.satisfy3rdParty(discharge);
 
-    //console.log(`[INFO] Rec`)
-
-    /*let group = myMacaroon.identifier;
-    verifier.satisfyExact(`file = ${req.params.file}`);
-    //verifier.satisfyExact(`user = ${req.params.user}`);
-    verifier.satisfyExact(`method = ${req.method}`);
-    verifier.satisfyGeneral(TimestampVerifier)
-    //verifier.satisfyGeneral(IdentifierVerifier);
-    verifier.satisfyGeneral((caveat) => CorrectGroupVerifier(caveat, req.params.group));
-    if(verifier.isValid(mySecret)) {
-        console.log("Valid before third party check");
-    }
-    verifier.satisfy3rdParty(myMacaroon)
-   // verifier.satisfyGeneral((caveat) => UserInGroupVerifier(caveat, req.params.user));
-*/
     if(verifier.isValid(mySecret)){
         res.send("Success! Very private resource");
     } else {
@@ -138,7 +124,6 @@ app.get('/:group/:file', function(req, res) {
     }
 
 });
-
 
 app.listen(port, function() {
   console.log(`[INFO] Group server listening on port ${port}!`)
