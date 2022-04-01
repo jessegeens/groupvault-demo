@@ -47,6 +47,13 @@ app.post('/idp/authorize', function(req, res) {
     res.status(403).send("Forbidden: invalid username or password");
   }
 
+  // Verify username in caveatKey is equal to username used to log in
+  let claimedUsername = decryptedCaveatKey.replace("user = ", "")
+  if(claimedUsername != username) {
+    res.status(403).send("Forbidden: given username does not correspond to caveat")
+    return;
+  }
+
   //console.log(`Got macaroon: ${macaroon.inspect()}`);
 
   let caveatId = extractCaveatId(macaroon.inspect());
@@ -55,7 +62,7 @@ app.post('/idp/authorize', function(req, res) {
     `http://localhost:${port}`,
     decryptedCaveatKey, caveatId)
     .add_first_party_caveat("time < " + (Date.now() + 1000 * 5))
-    .add_first_party_caveat("user = " + username)
+    .add_first_party_caveat(decryptedCaveatKey)
     .getMacaroon();
 
   let preparedDischargeMacaroon = new MacaroonsBuilder.modify(macaroon)

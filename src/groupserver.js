@@ -22,7 +22,7 @@ app.use(bodyParser.json())
 // can be fetched from the oidcIssuer element in the profile document
 // Based on this, the discharge macaroons would also be constructed
 let groupMembers = {
-    'group1': ["jesse", "john"] 
+    'group1': ["jesse", "john", "jesse2"] 
 }
 
 let generatedIdentifiers = [];
@@ -80,7 +80,7 @@ app.get('/idp/new_macaroon/:group/:user', async function(req, res) {
     let identifier = uuid.v4();
     generatedIdentifiers.push(identifier);
 
-    let caveatKey = uuid.v4();
+    let caveatKey = "user = " + req.params.user;  //uuid.v4();
 
     // Before issuing a macaroon for this group, make sure
     // user actually belongs to this group

@@ -49,6 +49,8 @@ async function requestResource() {
             //.add_first_party_caveat("method = GET")
             //.add_first_party_caveat("identifier = " + uuid.v4())
             .getMacaroon();
+        console.log(`Macaroon is ${myMacaroon.inspect()}`)
+        console.log(`Discharge is ${MacaroonsBuilder.deserialize(discharge).inspect()}`)
         let result = await axios
             .get(`http://localhost:${groupport}/${group}/resource`, {
                 headers: {
